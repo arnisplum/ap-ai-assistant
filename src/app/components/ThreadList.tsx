@@ -137,6 +137,7 @@ export function ThreadList({
 
   const isLoadingMore =
     threads.size > 0 && threads.data?.[threads.size - 1] == null;
+  const hasLoadedThreads = threads.data !== undefined;
   const isEmpty = threads.data?.at(0)?.length === 0;
   const isReachingEnd = isEmpty || (threads.data?.at(-1)?.length ?? 0) < 20;
 
@@ -273,13 +274,11 @@ export function ThreadList({
       <ScrollArea className="h-0 flex-1">
         {threads.error && <ErrorState message={threads.error.message} />}
 
-        {!threads.error && !threads.data && threads.isLoading && (
-          <LoadingState />
-        )}
+        {!threads.error && !hasLoadedThreads && <LoadingState />}
 
-        {!threads.error && !threads.isLoading && isEmpty && <EmptyState />}
+        {!threads.error && hasLoadedThreads && isEmpty && <EmptyState />}
 
-        {!threads.error && !isEmpty && (
+        {!threads.error && hasLoadedThreads && !isEmpty && (
           <div className="box-border w-full max-w-full overflow-hidden p-2">
             {(
               Object.keys(GROUP_LABELS) as Array<keyof typeof GROUP_LABELS>

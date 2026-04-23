@@ -2,7 +2,12 @@
 
 import React, { useState, useEffect, useCallback, Suspense } from "react";
 import { useQueryState } from "nuqs";
-import { getConfig, saveConfig, StandaloneConfig } from "@/lib/config";
+import {
+  getConfig,
+  getDefaultConfig,
+  saveConfig,
+  StandaloneConfig,
+} from "@/lib/config";
 import { ConfigDialog } from "@/app/components/ConfigDialog";
 import { Button } from "@/components/ui/button";
 import { Assistant } from "@langchain/langgraph-sdk";
@@ -204,7 +209,9 @@ function HomePageInner({
 }
 
 function HomePageContent() {
-  const [config, setConfig] = useState<StandaloneConfig | null>(null);
+  const [config, setConfig] = useState<StandaloneConfig | null>(
+    getDefaultConfig()
+  );
   const [configDialogOpen, setConfigDialogOpen] = useState(false);
   const [assistantId, setAssistantId] = useQueryState("assistantId");
 
@@ -216,8 +223,6 @@ function HomePageContent() {
       if (!assistantId) {
         setAssistantId(savedConfig.assistantId);
       }
-    } else {
-      setConfigDialogOpen(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -244,6 +249,7 @@ function HomePageContent() {
           open={configDialogOpen}
           onOpenChange={setConfigDialogOpen}
           onSave={handleSaveConfig}
+          initialConfig={getDefaultConfig()}
         />
         <div className="flex h-screen items-center justify-center">
           <div className="text-center">
