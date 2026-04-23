@@ -12,7 +12,7 @@ import { ConfigDialog } from "@/app/components/ConfigDialog";
 import { Button } from "@/components/ui/button";
 import { Assistant } from "@langchain/langgraph-sdk";
 import { ClientProvider, useClient } from "@/providers/ClientProvider";
-import { Settings, MessagesSquare, SquarePen } from "lucide-react";
+import { Settings, MessagesSquare, SquarePen, Menu, X } from "lucide-react";
 import {
   ResizableHandle,
   ResizablePanel,
@@ -22,6 +22,23 @@ import { ThreadList } from "@/app/components/ThreadList";
 import { ChatProvider } from "@/providers/ChatProvider";
 import { ChatInterface } from "@/app/components/ChatInterface";
 
+const MOBILE_BREAKPOINT = 768;
+
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    const checkMobile = () => setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
+  }, []);
+
+  return mounted ? isMobile : false;
+}
+
 interface HomePageInnerProps {
   config: StandaloneConfig;
   configDialogOpen: boolean;
@@ -29,7 +46,149 @@ interface HomePageInnerProps {
   handleSaveConfig: (config: StandaloneConfig) => void;
 }
 
-function HomePageInner({
+function MobileLayout({
+  config,
+  configDialogOpen,
+  setConfigDialogOpen,
+  handleSaveConfig,
+}: HomePageInnerProps) {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [assistant, setAssistant] = useState<Assistant | null>(null);
+  const client = useClient();
+
+  useEffect(() => {
+    const fetchAssistant = async () => {
+      try {
+        const assistants = await client.assistants.search({
+          graphId: config.assistantId,
+          limit: 100,
+        });
+        const defaultAssistant = assistants.find(
+          (a) => a.metadata?.["created_by"] === "system"
+        );
+        setAssistant(
+          defaultAssistant || {
+            assistant_id: config.assistantId,
+            graph_id: config.assistantId,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            config: {},
+            metadata: {},
+            version: 1,
+            name: config.assistantId,
+            context: {},
+          }
+        );
+      } catch {
+        setAssistant({
+          assistant_id: config.assistantId,
+          graph_id: config.assistantId,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          config: {},
+          metadata: {},
+          version: 1,
+          name: config.assistantId,
+          context: {},
+        });
+      }
+    };
+    fetchAssistant();
+  }, [client, config.assistantId]);
+
+  return (
+    <>
+      <ConfigDialog
+        open={configDialogOpen}
+        onOpenChange={setConfigDialogOpen}
+        onSave={handleSaveConfig}
+        initialConfig={config}
+      />
+
+      {/* Mobile Header */}
+      <header className="flex h-14 items-center justify-between border-b border-border bg-card px-4">
+        <div className="flex items-center gap-3">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setSidebarOpen(true)}
+            className="h-11 w-11"
+          >
+            <Menu className="h-6 w-6" />
+          </Button>
+          <h1 className="text-xl font-bold text-foreground">AP-ai</h1>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => {
+              window.history.pushState({}, "", "?");
+              window.location.reload();
+            }}
+            className="h-11 w-11"
+          >
+            <SquarePen className="h-5 w-5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setConfigDialogOpen(true)}
+            className="h-11 w-11"
+          >
+            <Settings className="h-5 w-5" />
+          </Button>
+        </div>
+      </header>
+
+      {/* Sidebar Overlay */}
+      {sidebarOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-40 bg-black/50"
+            onClick={() => setSidebarOpen(false)}
+          />
+          <div className="fixed inset-y-0 left-0 z-50 w-[300px] bg-card shadow-xl">
+            <div className="flex h-14 items-center justify-between border-b border-border px-4">
+              <span className="text-lg font-semibold">Threads</span>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setSidebarOpen(false)}
+                className="h-10 w-10"
+              >
+                <X className="h-5 w-5" />
+              </Button>
+            </div>
+            <div className="h-[calc(100vh-56px)] overflow-y-auto">
+              <ThreadList
+                onThreadSelect={async (id) => {
+                  const url = new URL(window.location.href);
+                  url.searchParams.set("threadId", id);
+                  window.history.pushState({}, "", url.toString());
+                  setSidebarOpen(false);
+                  window.location.reload();
+                }}
+                onMutateReady={() => {}}
+                onClose={() => setSidebarOpen(false)}
+                onInterruptCountChange={() => {}}
+              />
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Chat Area */}
+      <main className="flex-1 overflow-hidden">
+        <ChatProvider activeAssistant={assistant} onHistoryRevalidate={() => {}}>
+          <ChatInterface assistant={assistant} />
+        </ChatProvider>
+      </main>
+    </>
+  );
+}
+
+function DesktopLayout({
   config,
   configDialogOpen,
   setConfigDialogOpen,
@@ -50,12 +209,10 @@ function HomePageInner({
       );
 
     if (isUUID) {
-      // We should try to fetch the assistant directly with this UUID
       try {
         const data = await client.assistants.get(config.assistantId);
         setAssistant(data);
       } catch (error) {
-        console.error("Failed to fetch assistant:", error);
         setAssistant({
           assistant_id: config.assistantId,
           graph_id: config.assistantId,
@@ -70,8 +227,6 @@ function HomePageInner({
       }
     } else {
       try {
-        // We should try to list out the assistants for this graph, and then use the default one.
-        // TODO: Paginate this search, but 100 should be enough for graph name
         const assistants = await client.assistants.search({
           graphId: config.assistantId,
           limit: 100,
@@ -83,11 +238,7 @@ function HomePageInner({
           throw new Error("No default assistant found");
         }
         setAssistant(defaultAssistant);
-      } catch (error) {
-        console.error(
-          "Failed to find default assistant from graph_id: try setting the assistant_id directly:",
-          error
-        );
+      } catch {
         setAssistant({
           assistant_id: config.assistantId,
           graph_id: config.assistantId,
@@ -118,7 +269,7 @@ function HomePageInner({
       <div className="flex h-screen flex-col">
         <header className="flex h-16 items-center justify-between border-b border-border px-6">
           <div className="flex items-center gap-4">
-            <h1 className="text-xl font-semibold">Deep Agent UI</h1>
+            <h1 className="text-xl font-semibold">AP-ai Assistant</h1>
             {!sidebar && (
               <Button
                 variant="ghost"
@@ -138,8 +289,7 @@ function HomePageInner({
           </div>
           <div className="flex items-center gap-2">
             <div className="text-sm text-muted-foreground">
-              <span className="font-medium">Assistant:</span>{" "}
-              {config.assistantId}
+              <span className="font-medium">Assistant:</span> {config.assistantId}
             </div>
             <Button
               variant="outline"
@@ -208,6 +358,14 @@ function HomePageInner({
   );
 }
 
+function HomePageInner(props: HomePageInnerProps) {
+  const isMobile = useIsMobile();
+  if (isMobile) {
+    return <MobileLayout {...props} />;
+  }
+  return <DesktopLayout {...props} />;
+}
+
 function HomePageContent() {
   const [config, setConfig] = useState<StandaloneConfig | null>(
     getDefaultConfig()
@@ -215,7 +373,6 @@ function HomePageContent() {
   const [configDialogOpen, setConfigDialogOpen] = useState(false);
   const [assistantId, setAssistantId] = useQueryState("assistantId");
 
-  // On mount, check for saved config, otherwise show config dialog
   useEffect(() => {
     const savedConfig = getConfig();
     if (savedConfig) {
@@ -224,15 +381,7 @@ function HomePageContent() {
         setAssistantId(savedConfig.assistantId);
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // If config changes, update the assistantId
-  useEffect(() => {
-    if (config && !assistantId) {
-      setAssistantId(config.assistantId);
-    }
-  }, [config, assistantId, setAssistantId]);
+  }, [assistantId, setAssistantId]);
 
   const handleSaveConfig = useCallback((newConfig: StandaloneConfig) => {
     saveConfig(newConfig);
@@ -240,7 +389,9 @@ function HomePageContent() {
   }, []);
 
   const langsmithApiKey =
-    config?.langsmithApiKey || process.env.NEXT_PUBLIC_LANGSMITH_API_KEY || "";
+    config?.langsmithApiKey ||
+    process.env.NEXT_PUBLIC_LANGSMITH_API_KEY ||
+    "";
 
   if (!config) {
     return (
@@ -253,14 +404,11 @@ function HomePageContent() {
         />
         <div className="flex h-screen items-center justify-center">
           <div className="text-center">
-            <h1 className="text-2xl font-bold">Welcome to Standalone Chat</h1>
+            <h1 className="text-2xl font-bold">Welcome to AP-ai</h1>
             <p className="mt-2 text-muted-foreground">
               Configure your deployment to get started
             </p>
-            <Button
-              onClick={() => setConfigDialogOpen(true)}
-              className="mt-4"
-            >
+            <Button onClick={() => setConfigDialogOpen(true)} className="mt-4">
               Open Configuration
             </Button>
           </div>
@@ -270,10 +418,7 @@ function HomePageContent() {
   }
 
   return (
-    <ClientProvider
-      deploymentUrl={config.deploymentUrl}
-      apiKey={langsmithApiKey}
-    >
+    <ClientProvider deploymentUrl={config.deploymentUrl} apiKey={langsmithApiKey}>
       <HomePageInner
         config={config}
         configDialogOpen={configDialogOpen}
